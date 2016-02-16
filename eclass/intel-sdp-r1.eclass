@@ -9,62 +9,71 @@
 # Sci Team <sci@gentoo.org>
 # @BLURB: Handling of Intel's Software Development Products package management
 
+MULTILIB_COMPAT=( abi_x86_{32,64} )
+
+inherit check-reqs eutils multilib-build versionator
+
+EXPORT_FUNCTIONS pkg_setup src_unpack src_install pkg_postinst pkg_postrm pkg_pretend
+
 if [[ ! ${_INTEL_SDP_R1_ECLASS_} ]]; then
 
-case "${EAPI:-0}" in
+case "${EAPI}" in
 	6) ;;
 	*) die "EAPI=${EAPI} is not supported" ;;
 esac
 
-# @ECLASS-VARIABLE: INTEL_DID
+# @ECLASS-VARIABLE: INTEL_DIST_SKU
 # @DEFAULT_UNSET
 # @DESCRIPTION:
 # The package download ID from Intel.
-# To find out its value, see the links to download in
+# To determine its value, see the links to download in
 # https://registrationcenter.intel.com/RegCenter/MyProducts.aspx
 #
 # e.g. 8365
 #
-# Must be defined before inheriting the eclass
+# Must be defined before inheriting the eclass.
 
-# @ECLASS-VARIABLE: INTEL_DPN
+# @ECLASS-VARIABLE: INTEL_DIST_NAME
 # @DEFAULT_UNSET
 # @DESCRIPTION:
 # The package name to download from Intel.
-# To find out its value, see the links to download in
+# To determine its value, see the links to download in
 # https://registrationcenter.intel.com/RegCenter/MyProducts.aspx
 #
 # e.g. parallel_studio_xe
 #
-# Must be defined before inheriting the eclass
+# Must be defined before inheriting the eclass.
 
-# @ECLASS-VARIABLE: INTEL_DPV
+# @ECLASS-VARIABLE: INTEL_DIST_PV
 # @DEFAULT_UNSET
 # @DESCRIPTION:
 # The package download version from Intel.
-# To find out its value, see the links to download in
+# To determine its value, see the links to download in
 # https://registrationcenter.intel.com/RegCenter/MyProducts.aspx
 #
 # e.g. 2016_update1
 #
-# Must be defined before inheriting the eclass
+# Must be defined before inheriting the eclass.
 
 # @ECLASS-VARIABLE: INTEL_TARX
 # @DESCRIPTION:
-# The package extention.
-# To find out its value, see the links to download in
+# The package suffix.
+# To determine its value, see the links to download in
 # https://registrationcenter.intel.com/RegCenter/MyProducts.aspx
 #
 # e.g. tar.gz
 #
-# Must be defined before inheriting the eclass
+# Must be defined before inheriting the eclass.
 : ${INTEL_TARX:=tgz}
 
 # @ECLASS-VARIABLE: INTEL_SUBDIR
 # @DEFAULT_UNSET
 # @DESCRIPTION:
-# The package sub-directory where it will end-up in /opt/intel
-# To find out its value, you have to do a raw install from the Intel tar ball
+# The package sub-directory (without version numbers) where it will end-up in /opt/intel
+#
+# e.g. compilers_and_libraries
+#
+# To determine its value, you have to do a raw install from the Intel tarball.
 
 # @ECLASS-VARIABLE: INTEL_SKIP_LICENSE
 # @DEFAULT_UNSET
@@ -86,7 +95,7 @@ esac
 
 # @ECLASS-VARIABLE: INTEL_BIN_RPMS
 # @DESCRIPTION:
-# Functional name of rpm without any version/arch tag
+# Functional name of rpm without any version/arch tag.
 # Has to be a bash array
 #
 # e.g. ("icc-l-all-devel")
@@ -94,63 +103,81 @@ esac
 # if the rpm is located in a directory other than INTEL_RPMS_DIR you can
 # specify the full path
 #
-# e.g. CLI_install/rpm/intel-vtune-amplifier-xe-cli
-: ${INTEL_BIN_RPMS:=()}
+# e.g. ("CLI_install/rpm/intel-vtune-amplifier-xe-cli")
+[[ ${INTEL_BIN_RPMS[@]} ]] || INTEL_BIN_RPMS=()
 
 # @ECLASS-VARIABLE: INTEL_AMD64_RPMS
 # @DESCRIPTION:
-# AMD64 single arch rpms. Same syntax as INTEL_BIN_RPMS
-# Has to be a bash array
-: ${INTEL_AMD64_RPMS:=()}
+# AMD64 single arch rpms. Same syntax as INTEL_BIN_RPMS.
+# Has to be a bash array.
+[[ ${INTEL_AMD64_RPMS[@]} ]] || INTEL_AMD64_RPMS=()
 
 # @ECLASS-VARIABLE: INTEL_X86_RPMS
 # @DESCRIPTION:
-# X86 single arch rpms. Same syntax as INTEL_BIN_RPMS
-# Has to be a bash array
-: ${INTEL_X86_RPMS:=()}
+# X86 single arch rpms. Same syntax as INTEL_BIN_RPMS.
+# Has to be a bash array.
+[[ ${INTEL_X86_RPMS[@]} ]] || INTEL_X86_RPMS=()
 
 # @ECLASS-VARIABLE: INTEL_DAT_RPMS
 # @DESCRIPTION:
 # Functional name of rpm of common data which are arch free
-# without any version tag
-# Has to be a bash array
+# without any version tag. Has to be a bash array.
 #
 # e.g. ("openmp-l-all-devel")
 #
 # if the rpm is located in a directory different to INTEL_RPMS_DIR you can
 # specify the full path
 #
-# e.g. CLI_install/rpm/intel-vtune-amplifier-xe-cli-common
-: ${INTEL_DAT_RPMS:=()}
+# e.g. ("CLI_install/rpm/intel-vtune-amplifier-xe-cli-common")
+[[ ${INTEL_DAT_RPMS[@]} ]] || INTEL_DAT_RPMS=()
 
 # @ECLASS-VARIABLE: INTEL_SINGLE_ARCH
+# @DEFAULT_UNSET
 # @DESCRIPTION:
-# Unset, if only the multilib package will be provided by intel
-: ${INTEL_SINGLE_ARCH:=true}
+# Set to "true" if arches are to be fetched separately, instead of using the combined tarball.
 
-MULTILIB_COMPAT=( abi_x86_{32,64} )
+# @FUNCTION: _isdp_set-version-vars
+# @INTERNAL
+# @DESCRIPTION:
+# Sets the internal Intel version variables. This should be used temporarily
+# and unset using _isdp_unset-version-vars when not needed anymore.
+_isdp_set-version-vars() {
+	local i
+	for i in {1..4}; do
+		declare -g _INTEL_PV${i}=$(get_version_component_range ${i})
+	done
 
-inherit check-reqs eutils multilib-build versionator
+	local prefixes=('' '-' '.' '.' '-')
+	local indices=(4 1 2 3 4)
+	local var
+	_INTEL_PV=""
+	for i in {0..4}; do
+		var="_INTEL_PV${indices[i]}"
+		_INTEL_PV+="${prefixes[i]}${!var}"
+	done
+}
 
-_INTEL_PV1=$(get_version_component_range 1)
-_INTEL_PV2=$(get_version_component_range 2)
-_INTEL_PV3=$(get_version_component_range 3)
-_INTEL_PV4=$(get_version_component_range 4)
-_INTEL_PV=""
-[[ -n ${_INTEL_PV4} ]] && _INTEL_PV+="${_INTEL_PV4}-"
-[[ -n ${_INTEL_PV1} ]] && _INTEL_PV+="${_INTEL_PV1}"
-[[ -n ${_INTEL_PV2} ]] && _INTEL_PV+=".${_INTEL_PV2}"
-[[ -n ${_INTEL_PV3} ]] && _INTEL_PV+=".${_INTEL_PV3}"
-[[ -n ${_INTEL_PV4} ]] && _INTEL_PV+="-${_INTEL_PV4}"
+# @FUNCTION: _isdp_unset-version-vars
+# @INTERNAL
+# @DESCRIPTION:
+# Unsets the internal Intel version variables, in order to keep the
+# global environment clean.
+_isdp_unset-version-vars() {
+	local i
+	for i in {1..4}; do
+		unset _INTEL_PV${i}
+	done
+	unset _INTEL_PV
+}
 
-_INTEL_URI="http://registrationcenter-download.intel.com/akdlm/irc_nas/${INTEL_DID}/${INTEL_DPN}"
+_INTEL_URI="http://registrationcenter-download.intel.com/akdlm/irc_nas/${INTEL_DIST_SKU}/${INTEL_DIST_NAME}"
 
-if [ ${INTEL_SINGLE_ARCH} == true ]; then
-	SRC_URI="
-		abi_x86_32? ( ${_INTEL_URI}_${INTEL_DPV}_ia32.${INTEL_TARX} )
-		abi_x86_64? ( ${_INTEL_URI}_${INTEL_DPV}_intel64.${INTEL_TARX} )"
+if [[ "${INTEL_SINGLE_ARCH}" != true ]]; then
+	SRC_URI="${_INTEL_URI}_${INTEL_DIST_PV}.${INTEL_TARX}"
 else
-	SRC_URI="${_INTEL_URI}_${INTEL_DPV}.${INTEL_TARX}"
+	SRC_URI="
+		abi_x86_32? ( ${_INTEL_URI}_${INTEL_DIST_PV}_ia32.${INTEL_TARX} )
+		abi_x86_64? ( ${_INTEL_URI}_${INTEL_DIST_PV}_intel64.${INTEL_TARX} )"
 fi
 
 LICENSE="Intel-SDP"
@@ -163,32 +190,30 @@ RESTRICT="mirror"
 RDEPEND=""
 DEPEND="app-arch/rpm2targz"
 
-_INTEL_SDP_YEAR=${INTEL_DPV}
+_INTEL_SDP_YEAR=${INTEL_DIST_PV}
 _INTEL_SDP_YEAR=${_INTEL_SDP_YEAR%_sp*}
 _INTEL_SDP_YEAR=${_INTEL_SDP_YEAR%_update*}
 
 # @ECLASS-VARIABLE: INTEL_SDP_DIR
+# @INTERNAL
 # @DESCRIPTION:
 # Full rootless path to installation dir
-INTEL_SDP_DIR="opt/intel/${INTEL_SUBDIR}_${_INTEL_SDP_YEAR:-${_INTEL_PV1}}"
-[[ -n ${_INTEL_PV3} ]] && INTEL_SDP_DIR+=".${_INTEL_PV3}"
-[[ -n ${_INTEL_PV4} ]] && INTEL_SDP_DIR+=".${_INTEL_PV4}"
-
-# @ECLASS-VARIABLE: INTEL_SDP_EDIR
-# @DESCRIPTION:
-# Full rooted path to installation dir
-INTEL_SDP_EDIR="${EROOT%/}/${INTEL_SDP_DIR}"
+_isdp_set-version-vars
+INTEL_SDP_DIR="opt/intel/${INTEL_SUBDIR}_${_INTEL_SDP_YEAR:-${_INTEL_PV1}}.${_INTEL_PV3}.${_INTEL_PV4}"
+_isdp_unset-version-vars
 
 S="${WORKDIR}"
 
 QA_PREBUILT="${INTEL_SDP_DIR}/*"
 
 # @ECLASS-VARIABLE: INTEL_ARCH
+# @INTERNAL
 # @DEFAULT_UNSET
 # @DESCRIPTION:
+# Has to be a bash array
 # Intels internal names of the arches; will be set at runtime accordingly
 #
-# e.g. amd64-multilib -> INTEL_ARCH="intel64 ia32"
+# e.g. amd64-multilib -> INTEL_ARCH=("intel64" "ia32")
 
 # @FUNCTION: _isdp_big-warning
 # @USAGE: [pre-check | test-failed]
@@ -200,18 +225,16 @@ _isdp_big-warning() {
 
 	case ${1} in
 		pre-check )
-			echo ""
 			ewarn "License file not found!"
 			;;
 
 		test-failed )
-			echo ""
 			ewarn "Function test failed. Most probably due to an invalid license."
 			ewarn "This means you already tried to bypass the license check once."
 			;;
 	esac
 
-	echo ""
+	ewarn ""
 	ewarn "Make sure you have received an Intel license."
 	ewarn "To receive a non-commercial license, you need to register at:"
 	ewarn "https://software.intel.com/en-us/qualify-for-free-software"
@@ -225,12 +248,10 @@ _isdp_big-warning() {
 	case ${1} in
 		pre-check )
 			ewarn "before proceeding with installation of ${P}"
-			echo ""
 			;;
 		* )
-			echo ""
 			;;
-			esac
+	esac
 }
 
 # @FUNCTION: _isdp_version_test
@@ -255,26 +276,25 @@ _isdp_version_test() {
 			;;
 	esac
 
-	for arch in ${INTEL_ARCH}; do
+	for arch in ${INTEL_ARCH[@]}; do
 		case ${EBUILD_PHASE} in
 			install )
-				comp_full="${ED}/${INTEL_SDP_DIR}/linux/bin/${arch}/${comp}"
+				comp_full="${ED%/}/${INTEL_SDP_DIR}/linux/bin/${arch}/${comp}"
 				;;
 			postinst )
-				comp_full="${INTEL_SDP_EDIR}/linux/bin/${arch}/${comp}"
+				comp_full="${EROOT%/}/${INTEL_SDP_DIR}/linux/bin/${arch}/${comp}"
 				;;
 			* )
-				ewarn "Compile test not supported in ${EBUILD_PHASE}"
+				die "Compile test not supported in ${EBUILD_PHASE}"
 				continue
 				;;
 		esac
 
-		debug-print "LD_LIBRARY_PATH=\"${INTEL_SDP_EDIR}/linux/bin/${arch}/\" \"${comp_full}\" -V"
+		debug-print "LD_LIBRARY_PATH=\"${EROOT%/}/${INTEL_SDP_DIR}/linux/bin/${arch}/\" \"${comp_full}\" -V"
 
-		LD_LIBRARY_PATH="${INTEL_SDP_EDIR}/linux/bin/${arch}/" "${comp_full}" -V &>/dev/null
-		[[ $? -ne 0 ]] && warn=yes
+		LD_LIBRARY_PATH="${EROOT%/}/${INTEL_SDP_DIR}/linux/bin/${arch}/" "${comp_full}" -V &>/dev/null || warn=yes
 	done
-	[[ "${warn}" == "yes" ]] && _isdp_big-warning test-failed
+	[[ ${warn} == yes ]] && _isdp_big-warning test-failed
 }
 
 # @FUNCTION: _isdp_run-test
@@ -284,10 +304,11 @@ _isdp_version_test() {
 _isdp_run-test() {
 	debug-print-function ${FUNCNAME} "${@}"
 
-	if [[ -z ${INTEL_SKIP_LICENSE} ]]; then
+	if [[ -z "${INTEL_SKIP_LICENSE}" ]]; then
 		case ${PN} in
 			ifc | icc )
-				_isdp_version_test ;;
+				_isdp_version_test
+				;;
 			* )
 				debug-print "No test available for ${PN}"
 				;;
@@ -295,19 +316,20 @@ _isdp_run-test() {
 	fi
 }
 
-# @FUNCTION: convert2intel_arch
+# @FUNCTION: _isdp_convert2intel-arch
 # @USAGE: <arch>
+# @INTERNAL
 # @DESCRIPTION:
 # Convert between portage arch (e.g. amd64, x86) and intel arch
 # nomenclature (e.g. intel64, ia32)
-convert2intel_arch() {
+_isdp_convert2intel-arch() {
 	debug-print-function ${FUNCNAME} "${@}"
 
 	case $1 in
-		amd64|abi_x86_64|*amd64*)
+		*amd64*|abi_x86_64)
 			echo "intel64"
 			;;
-		x86|abi_x86_32|*x86*)
+		*x86*)
 			echo "ia32"
 			;;
 		*)
@@ -318,10 +340,11 @@ convert2intel_arch() {
 
 # @FUNCTION: intel-sdp-r1_pkg_pretend
 # @DESCRIPTION:
-# @CODE
-# * Check that the user has a (valid) license file before going on.
-# * Check for space requirements being fullfilled
-# @CODE
+#
+# * Check for a (valid) license before proceeding.
+#
+# * Check for space requirements being fulfilled.
+#
 intel-sdp-r1_pkg_pretend() {
 	debug-print-function ${FUNCNAME} "${@}"
 
@@ -331,7 +354,7 @@ intel-sdp-r1_pkg_pretend() {
 	check-reqs_pkg_pretend
 
 	if [[ -z ${INTEL_SKIP_LICENSE} ]]; then
-		if echo ${INTEL_LICENSE_FILE} | grep -q @; then
+		if [[ ${INTEL_LICENSE_FILE} == *@* ]]; then
 			einfo "Looks like you are using following license server:"
 			einfo "   ${INTEL_LICENSE_FILE}"
 			return 0
@@ -339,20 +362,19 @@ intel-sdp-r1_pkg_pretend() {
 
 		dirs=(
 			"${EPREFIX}/opt/intel/licenses"
-			"${INTEL_SDP_EDIR}/licenses"
-			"${INTEL_SDP_EDIR}/Licenses"
+			"${EROOT%/}/${INTEL_SDP_DIR}/licenses"
+			"${EROOT%/}/${INTEL_SDP_DIR}/Licenses"
 			)
 		for dir in "${dirs[@]}" ; do
 			ebegin "Checking for a license in: ${dir}"
-			#maybe use nullglob or [[ $(echo ${dir/*lic) != "${dir}/*lic" ]]
-			[[ $( ls "${dir}"/*lic 2>/dev/null ) ]]; ret=$?
-			eend ${ret}
-			if [[ ${ret} == "0" ]]; then
-				warn=${ret}
+			path_exists "${dir}"/*lic && warn=0
+			eend ${warn}
+
+			if [[ ${warn} == 0 ]]; then
 				break
 			fi
 		done
-		if [[ ${warn} == "1" ]]; then
+		if [[ ${warn} == 1 ]]; then
 			_isdp_big-warning pre-check
 			die "Could not find license file"
 		fi
@@ -367,122 +389,94 @@ intel-sdp-r1_pkg_pretend() {
 # Setting up and sorting some internal variables
 intel-sdp-r1_pkg_setup() {
 	debug-print-function ${FUNCNAME} "${@}"
-	local arch a p
 
-	INTEL_ARCH=""
+	INTEL_ARCH=()
+	INTEL_RPMS=()
 
+	local arch=()
 	if use abi_x86_64; then
-		arch+=" x86_64"
-		INTEL_ARCH+=" intel64"
+		arch+=("x86_64")
+		INTEL_ARCH+=($(_isdp_convert2intel-arch "abi_x86_64"))
 	fi
 	if use abi_x86_32; then
-		arch+=" ${INTEL_X86}"
-		INTEL_ARCH+=" ia32"
+		arch+=("${INTEL_X86}")
+		INTEL_ARCH+=($(_isdp_convert2intel-arch "abi_x86_32"))
 	fi
-	INTEL_RPMS=()
-	INTEL_RPMS_FULL=()
 
-	for p in "${INTEL_BIN_RPMS[@]}"; do
-		for a in ${arch}; do
-			if [ ${p} == $(basename ${p}) ]; then
+	# Expand components into full RPM filenames
+	expand_component_into_full_rpm() {
+		local deref_var="${1}[@]"
+		local arch="${2}"
+
+		local p a rpm_prefix rpm_suffix
+
+		for p in "${!deref_var}"; do
+			for a in ${arch}; do
+				# check if a directory is prefixed
+				if [[ "${p}" == "${p##*/}" ]]; then
+					rpm_prefix="${INTEL_RPMS_DIR}/intel-"
+				else
+					rpm_prefix=""
+				fi
+
 				# check for variables ending in ".rpm"
 				# these are excluded from version expansion, due to Intel's
 				# idiosyncratic versioning scheme beginning with their 2016
-				# suite of tools.
+				# suite of tools. For instance
+				#
+				#     intel-ccompxe-2016.1-056.noarch.rpm
+				#
+				# which is completely unpredictable using versions
 				if [[ "${p}" == *.rpm ]]; then
-					INTEL_RPMS+=( intel-${p} )
+					rpm_suffix=""
 				else
-					INTEL_RPMS+=( intel-${p}-${_INTEL_PV}.${a}.rpm )
+					rpm_suffix="-${_INTEL_PV}.${a}.rpm"
 				fi
-			else
-				if [[ "${p}" == *.rpm ]]; then
-					INTEL_RPMS_FULL+=( ${p} )
-				else
-					INTEL_RPMS_FULL+=( ${p}-${_INTEL_PV}.${a}.rpm )
-				fi
-			fi
+
+				INTEL_RPMS+=( "${rpm_prefix}${p}${rpm_suffix}" )
+			done
 		done
-	done
+	}
+
+	local vars_to_expand=("INTEL_BIN_RPMS" "INTEL_X86_RPMS" "INTEL_DAT_RPMS")
+	local vars_to_expand_suffixes=("${arch[*]}" "${INTEL_X86}" "noarch")
 
 	if use amd64; then
-		for p in "${INTEL_AMD64_RPMS[@]}"; do
-			if [ ${p} == $(basename ${p}) ]; then
-				if [[ "${p}" == *.rpm ]]; then
-					INTEL_RPMS+=( intel-${p} )
-				else
-					INTEL_RPMS+=( intel-${p}-${_INTEL_PV}.x86_64.rpm )
-				fi
-			else
-				if [[ "${p}" == *.rpm ]]; then
-					INTEL_RPMS_FULL+=( ${p} )
-				else
-					INTEL_RPMS_FULL+=( ${p}-${_INTEL_PV}.x86_64.rpm )
-				fi
-			fi
-		done
+		vars_to_expand+=("INTEL_AMD64_RPMS")
+		vars_to_expand_suffixes+=("x86_64")
 	fi
 
-	for p in "${INTEL_X86_RPMS[@]}"; do
-		if [ ${p} == $(basename ${p}) ]; then
-			if [[ "${p}" == *.rpm ]]; then
-				INTEL_RPMS+=( intel-${p} )
-			else
-				INTEL_RPMS+=( intel-${p}-${_INTEL_PV}.${INTEL_X86}.rpm )
-			fi
-		else
-			if [[ "${p}" == *.rpm ]]; then
-				INTEL_RPMS_FULL+=( ${p} )
-			else
-				INTEL_RPMS_FULL+=( ${p}-${_INTEL_PV}.${INTEL_X86}.rpm )
-			fi
-		fi
+	_isdp_set-version-vars
+	local i
+	for ((i=0; i<${#vars_to_expand[@]}; i++)); do
+		expand_component_into_full_rpm "${vars_to_expand[i]}" "${vars_to_expand_suffixes[i]}"
 	done
-
-	for p in "${INTEL_DAT_RPMS[@]}"; do
-		if [ ${p} == $(basename ${p}) ]; then
-			if [[ "${p}" == *.rpm ]]; then
-				INTEL_RPMS+=( intel-${p} )
-			else
-				INTEL_RPMS+=( intel-${p}-${_INTEL_PV}.noarch.rpm )
-			fi
-		else
-			if [[ "${p}" == *.rpm ]]; then
-				INTEL_RPMS_FULL+=( ${p} )
-			else
-				INTEL_RPMS_FULL+=( ${p}-${_INTEL_PV}.noarch.rpm )
-			fi
-		fi
-	done
+	_isdp_unset-version-vars
 }
 
 # @FUNCTION: intel-sdp-r1_src_unpack
 # @DESCRIPTION:
 # Unpacking necessary rpms from tarball, extract them and rearrange the output.
 intel-sdp-r1_src_unpack() {
-	local l r subdir rb t list=() debug_list
-
+	local t
 	for t in ${A}; do
+		local r list=()
 		for r in "${INTEL_RPMS[@]}"; do
-			rpmdir=${t%%.*}/${INTEL_RPMS_DIR}
-			list+=( ${rpmdir}/${r} )
-		done
-
-		for r in "${INTEL_RPMS_FULL[@]}"; do
 			list+=( ${t%%.*}/${r} )
 		done
 
+		local debug_list
 		debug_list="$(IFS=$'\n'; echo ${list[@]} )"
 
 		debug-print "Adding to decompression list:"
 		debug-print ${debug_list}
 
-		tar xvf "${DISTDIR}"/${t} ${list[@]} &> "${T}"/rpm-extraction.log
+		tar -xvf "${DISTDIR}"/${t} ${list[@]} &> "${T}"/rpm-extraction.log
 
 		for r in ${list[@]}; do
-			rb=$(basename ${r})
-			einfo "Unpacking ${rb}"
-			rpm2tar -O ${r} | tar xvf - | sed -e \
-				"s:^\.:${EROOT#/}:g" > /dev/null; assert "unpacking ${r} failed"
+			einfo "Unpacking ${r}"
+			echo "Unpacking ${r}" >> "${T}"/rpm-extraction.log
+			rpm2tar -O ${r} | tar -xvf - &>> "${T}"/rpm-extraction.log; assert "Unpacking ${r} failed"
 		done
 	done
 }
@@ -494,9 +488,9 @@ intel-sdp-r1_src_install() {
 	debug-print-function ${FUNCNAME} "${@}"
 
 	# remove uninstall information
-	if path_exists opt/intel/"${INTEL_DPN}"*/uninstall; then
+	if path_exists opt/intel/"${INTEL_DIST_NAME}"*/uninstall; then
 		ebegin "Cleaning out uninstall"
-		rm -r opt/intel/"${INTEL_DPN}"*/uninstall || die
+		rm -r opt/intel/"${INTEL_DIST_NAME}"*/uninstall || die
 		eend
 	fi
 
@@ -534,19 +528,29 @@ intel-sdp-r1_src_install() {
 		eend
 	fi
 
-	# remove eclipse
+	# remove eclipse unconditionally
+	ebegin "Cleaning out eclipse files"
 	rm -rf opt/intel/ide_support_* || die
+	eend
+
+	# remove remaining japanese stuff
+	if ! use linguas_ja; then
+		ebegin "Cleaning out japanese language directories"
+		local i
+		while IFS='\n' read -r -d '' i; do
+			rm -r "${i}" || die
+		done < <(find opt -type d -name "ja" -print0)
+		eend
+	fi
 
 	ebegin "Tagging ${PN}"
 	find opt -name \*sh -type f -exec sed -i \
-		-e "s:<.*DIR>:${INTEL_SDP_EDIR}/linux:g" \
+		-e "s:<.*DIR>:${EROOT%/}/${INTEL_SDP_DIR}/linux:g" \
 		'{}' + || die
 	eend
 
-	[[ -d "${ED}" ]] || dodir /
-	mv opt "${ED}"/ || die "moving files failed"
+	mv opt "${ED%/}"/ || die "moving files failed"
 
-	dodir "${INTEL_SDP_DIR}"/licenses /opt/intel/ism/rm
 	keepdir "${INTEL_SDP_DIR}"/licenses /opt/intel/ism/rm
 }
 
@@ -574,13 +578,11 @@ intel-sdp-r1_pkg_postinst() {
 intel-sdp-r1_pkg_postrm() {
 	debug-print-function ${FUNCNAME} "${@}"
 
-	if [[ ${PN} = icc ]] && has_version ">=dev-util/ccache-3.1.9-r2" && [[ -z ${REPLACED_BY_VERSION} ]]; then
+	if [[ ${PN} = icc ]] && has_version ">=dev-util/ccache-3.1.9-r2" && [[ -z "${REPLACED_BY_VERSION}" ]]; then
 		# --remove-links would remove all links, --install-links updates them
 		"${EROOT}"/usr/bin/ccache-config --install-links
 	fi
 }
-
-EXPORT_FUNCTIONS pkg_setup src_unpack src_install pkg_postinst pkg_postrm pkg_pretend
 
 _INTEL_SDP_R1_ECLASS_=1
 fi
