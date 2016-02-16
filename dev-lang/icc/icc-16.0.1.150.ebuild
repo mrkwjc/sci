@@ -4,11 +4,10 @@
 
 EAPI=6
 
-INTEL_DPN=parallel_studio_xe
-INTEL_DID=8365
-INTEL_DPV=2016_update1
+INTEL_DIST_NAME=parallel_studio_xe
+INTEL_DIST_SKU=8365
+INTEL_DIST_PV=2016_update1
 INTEL_SUBDIR=compilers_and_libraries
-INTEL_SINGLE_ARCH=false
 
 inherit intel-sdp-r1
 
